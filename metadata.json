@@ -1,0 +1,6 @@
+{
+  "name": "PDF Pro",
+  "description": "A powerful, modern PDF conversion and manipulation tool supporting batch processing, merge, split, compress, and smart AI-powered layouts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
