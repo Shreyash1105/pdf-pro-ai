@@ -37,7 +37,7 @@ export default function PortalModal({
   addToast,
   onSelectTool
 }: PortalModalProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'languages' | 'help' | 'contact'>('overview');
+  const [activeTab, setActiveTab] = useState<'languages' | 'help' | 'contact'>('languages');
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
   // Form State
@@ -174,18 +174,6 @@ export default function PortalModal({
 
                 <nav className="space-y-2">
                   <button
-                    onClick={() => setActiveTab('overview')}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
-                      activeTab === 'overview'
-                        ? 'bg-red-500 text-white shadow-md shadow-red-500/15'
-                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5'
-                    }`}
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    <span>Features & Stats</span>
-                  </button>
-
-                  <button
                     onClick={() => setActiveTab('languages')}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
                       activeTab === 'languages'
@@ -242,34 +230,6 @@ export default function PortalModal({
               </button>
 
               <div className="flex-1">
-                {/* 0. OVERVIEW & FEATURES TAB */}
-                {activeTab === 'overview' && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="space-y-6"
-                  >
-                    <div>
-                      <h2 className="text-2xl font-bold font-display text-slate-900 dark:text-white flex items-center gap-2">
-                        Features & Stats
-                      </h2>
-                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                        Explore our enterprise-grade capabilities, live statistics, and client showcase.
-                      </p>
-                    </div>
-                    
-                    <div className="pt-2">
-                      <FeatureShowcase 
-                        activeLanguage={activeLanguage}
-                        onSelectTool={(toolId) => {
-                          onSelectTool(toolId);
-                          onClose();
-                        }}
-                      />
-                    </div>
-                  </motion.div>
-                )}
-
                 {/* 1. LANGUAGES TAB */}
                 {activeTab === 'languages' && (
                   <motion.div
