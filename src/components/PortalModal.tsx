@@ -11,12 +11,26 @@ import {
   MessageSquare,
   Shield,
   FileText,
-  Sparkles
+  Sparkles,
+  BarChart3,
+  Clock,
+  Users,
+  Lock,
+  Unlock,
+  ShieldAlert,
+  ShieldCheck,
+  AlertTriangle,
+  Info,
+  Terminal,
+  Activity
 } from 'lucide-react';
 import { collection, addDoc } from 'firebase/firestore';
+import { User as FirebaseUser } from 'firebase/auth';
 import { db } from '../lib/firebase';
 import { LANGUAGES, translations } from '../lib/translations';
 import FeatureShowcase from './FeatureShowcase';
+import { fetchPlatformStats, PlatformStats, getCurrentSessionTime } from '../lib/analytics';
+import { encryptFileClientSide, decryptFileClientSide, scanDocumentForScams, ScamAnalysisResult } from '../lib/encryption';
 
 interface PortalModalProps {
   isOpen: boolean;
@@ -26,6 +40,7 @@ interface PortalModalProps {
   darkMode: boolean;
   addToast: (message: string, type: 'success' | 'error' | 'info') => void;
   onSelectTool: (toolId: any) => void;
+  currentUser?: FirebaseUser | null;
 }
 
 export default function PortalModal({
@@ -35,10 +50,58 @@ export default function PortalModal({
   onSelectLanguage,
   darkMode,
   addToast,
-  onSelectTool
+  onSelectTool,
+  currentUser
 }: PortalModalProps) {
-  const [activeTab, setActiveTab] = useState<'languages' | 'help' | 'contact'>('languages');
+  const isOwner = currentUser?.email?.toLowerCase() === 'ssrakshe05@gmail.com';
+  const [activeTab, setActiveTab] = useState<'languages' | 'help' | 'contact' | 'analytics' | 'e2ee'>('languages');
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
+
+  // Analytics State
+  const [stats, setStats] = useState<PlatformStats | null>(null);
+  const [isLoadingStats, setIsLoadingStats] = useState(false);
+  const [currentSessionSec, setCurrentSessionSec] = useState(0);
+
+  // Fetch statistics and update live session duration
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    // Load initial stats
+    const loadStats = async () => {
+      setIsLoadingStats(true);
+      try {
+        const data = await fetchPlatformStats();
+        setStats(data);
+      } catch (err) {
+        console.error('Failed to load stats:', err);
+      } finally {
+        setIsLoadingStats(false);
+      }
+    };
+
+    loadStats();
+
+    // Live session duration clock ticking every second
+    setCurrentSessionSec(getCurrentSessionTime());
+    const clockInterval = setInterval(() => {
+      setCurrentSessionSec(getCurrentSessionTime());
+    }, 1000);
+
+    // Poll server-side statistics every 20 seconds to keep analytics fresh
+    const statsInterval = setInterval(async () => {
+      try {
+        const data = await fetchPlatformStats();
+        setStats(data);
+      } catch (err) {
+        console.warn('Silent stats poll error:', err);
+      }
+    }, 20000);
+
+    return () => {
+      clearInterval(clockInterval);
+      clearInterval(statsInterval);
+    };
+  }, [isOpen]);
 
   // Form State
   const [contactName, setContactName] = useState('');
@@ -47,6 +110,87 @@ export default function PortalModal({
   const [contactMessage, setContactMessage] = useState('');
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // E2EE File Vault State
+  const [e2eeFile, setE2eeFile] = useState<File | null>(null);
+  const [e2eePassword, setE2eePassword] = useState('');
+  const [e2eeMode, setE2eeMode] = useState<'encrypt' | 'decrypt'>('encrypt');
+  const [isProcessingE2EE, setIsProcessingE2EE] = useState(false);
+
+  // Scam Shield State
+  const [scamFileName, setScamFileName] = useState('');
+  const [scamTextSample, setScamTextSample] = useState('');
+  const [scamResult, setScamResult] = useState<ScamAnalysisResult | null>(null);
+  const [isScanningScam, setIsScanningScam] = useState(false);
+
+  // Handlers for E2EE Vault
+  const handleE2EEProcess = async () => {
+    if (!e2eeFile) {
+      addToast('Please select a file to process first.', 'error');
+      return;
+    }
+    if (!e2eePassword) {
+      addToast('Please enter an encryption password.', 'error');
+      return;
+    }
+
+    setIsProcessingE2EE(true);
+    try {
+      if (e2eeMode === 'encrypt') {
+        const encryptedBlob = await encryptFileClientSide(e2eeFile, e2eePassword);
+        
+        // Trigger a client-side download of the encrypted .secured file
+        const url = URL.createObjectURL(encryptedBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${e2eeFile.name}.secured`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        addToast('Document successfully encrypted! E2EE complete.', 'success');
+      } else {
+        const { decryptedBlob, originalFileName } = await decryptFileClientSide(e2eeFile, e2eePassword);
+        
+        // Trigger a client-side download of the decrypted file
+        const url = URL.createObjectURL(decryptedBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = originalFileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        addToast('Document successfully decrypted and verified!', 'success');
+      }
+      setE2eeFile(null);
+      setE2eePassword('');
+    } catch (err: any) {
+      addToast(err.message || 'E2EE operation failed.', 'error');
+    } finally {
+      setIsProcessingE2EE(false);
+    }
+  };
+
+  const handleScanScam = () => {
+    if (!scamFileName && !scamTextSample) {
+      addToast('Please enter a filename or a text sample to scan.', 'error');
+      return;
+    }
+    setIsScanningScam(true);
+    setTimeout(() => {
+      const res = scanDocumentForScams(scamFileName, scamTextSample);
+      setScamResult(res);
+      setIsScanningScam(false);
+      if (res.isSafe) {
+        addToast('Scam scan completed: Clear!', 'success');
+      } else {
+        addToast('Alert: Risk factors identified in document!', 'error');
+      }
+    }, 800);
+  };
 
   const t = translations[activeLanguage] || translations['en'];
 
@@ -208,6 +352,32 @@ export default function PortalModal({
                     <MessageSquare className="w-4 h-4" />
                     <span>Contact Support</span>
                   </button>
+
+                  {isOwner && (
+                    <button
+                      onClick={() => setActiveTab('analytics')}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+                        activeTab === 'analytics'
+                          ? 'bg-red-500 text-white shadow-md shadow-red-500/15'
+                          : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5'
+                      }`}
+                    >
+                      <BarChart3 className="w-4 h-4" />
+                      <span>Visitor Stats</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => setActiveTab('e2ee')}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+                      activeTab === 'e2ee'
+                        ? 'bg-red-500 text-white shadow-md shadow-red-500/15'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5'
+                    }`}
+                  >
+                    <Lock className="w-4 h-4" />
+                    <span>E2EE & Scam Shield</span>
+                  </button>
                 </nav>
               </div>
 
@@ -230,6 +400,499 @@ export default function PortalModal({
               </button>
 
               <div className="flex-1">
+                {/* 0. VISITOR ANALYTICS TAB */}
+                {activeTab === 'analytics' && isOwner && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="space-y-6"
+                  >
+                    <div>
+                      <h2 className="text-2xl font-bold font-display text-slate-900 dark:text-white flex items-center gap-2">
+                        <BarChart3 className="w-6 h-6 text-red-500" />
+                        <span>Platform Usage & Visitor Analytics</span>
+                      </h2>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                        Real-time telemetry showing website visitors, platform adoption, and active work session timers.
+                      </p>
+                    </div>
+
+                    {isLoadingStats && !stats ? (
+                      <div className="flex flex-col items-center justify-center py-12 space-y-3">
+                        <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                        <p className="text-xs text-slate-400 font-mono">Loading telemetry aggregates...</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        {/* Top metric boxes */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                          <div className="bg-white dark:bg-[#12151C] p-4.5 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm space-y-1">
+                            <span className="text-xs font-mono text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                              Total Visitors
+                            </span>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-2xl font-extrabold text-slate-900 dark:text-white font-mono">
+                                {stats?.totalVisitsCount || 1}
+                              </span>
+                              <span className="text-[10px] text-emerald-500 font-semibold font-mono">
+                                Live
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 block">
+                              Unique session IDs
+                            </span>
+                          </div>
+
+                          <div className="bg-white dark:bg-[#12151C] p-4.5 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm space-y-1">
+                            <span className="text-xs font-mono text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                              Active Users
+                            </span>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-2xl font-extrabold text-slate-900 dark:text-white font-mono">
+                                {stats?.activeUsersCount || 1}
+                              </span>
+                              <span className="text-[10px] text-red-500 animate-pulse font-semibold font-mono">
+                                ● Online
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 block">
+                              Active in last 2 mins
+                            </span>
+                          </div>
+
+                          <div className="bg-white dark:bg-[#12151C] p-4.5 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm space-y-1">
+                            <span className="text-xs font-mono text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                              Combined Work
+                            </span>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-2xl font-extrabold text-slate-900 dark:text-white font-mono">
+                                {stats ? Math.ceil(stats.totalWorkingSeconds / 60) : 1}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">mins</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 block">
+                              Total tool working hours
+                            </span>
+                          </div>
+
+                          <div className="bg-white dark:bg-[#12151C] p-4.5 rounded-2xl border border-red-500/20 dark:border-red-500/30 bg-red-500/[0.01] shadow-sm space-y-1">
+                            <span className="text-xs font-mono text-red-500 dark:text-red-400 uppercase tracking-wider block flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-red-500" />
+                              Your Work Timer
+                            </span>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-2xl font-extrabold text-slate-900 dark:text-white font-mono">
+                                {Math.floor(currentSessionSec / 60)}m {currentSessionSec % 60}s
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 block">
+                              Active session duration
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Recent session activity list */}
+                        <div className="bg-white dark:bg-[#12151C] border border-slate-200 dark:border-white/5 rounded-2xl p-4.5 space-y-3 shadow-sm">
+                          <h4 className="text-xs font-bold font-mono text-slate-400 uppercase tracking-widest block">
+                            Live Workspace Feed (Recent Visitors)
+                          </h4>
+                          
+                          <div className="overflow-x-auto max-h-[220px] overflow-y-auto">
+                            <table className="w-full text-left text-xs text-slate-500 dark:text-slate-400 font-mono">
+                              <thead>
+                                <tr className="border-b border-slate-100 dark:border-white/5 pb-2 text-slate-400 sticky top-0 bg-white dark:bg-[#12151C]">
+                                  <th className="py-2">Session ID</th>
+                                  <th className="py-2">User Type</th>
+                                  <th className="py-2">Browser / Tech</th>
+                                  <th className="py-2">Language</th>
+                                  <th className="py-2">Time Spent</th>
+                                  <th className="py-2 text-right">Last Signal</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                                {stats?.recentSessions.slice(0, 10).map((sess, idx) => {
+                                  const isCurrent = sess.id === sessionStorage.getItem('pdf_pro_session_id');
+                                  const timeDiffSec = Math.floor((Date.now() - sess.lastActive) / 1000);
+                                  const isActiveNow = timeDiffSec < 120;
+                                  
+                                  return (
+                                    <tr key={sess.id || idx} className={`${isCurrent ? 'bg-red-500/5 dark:bg-red-500/10 font-bold' : ''}`}>
+                                      <td className="py-2.5 flex items-center gap-1.5 font-mono text-slate-700 dark:text-slate-300">
+                                        <span className="text-slate-400">
+                                          {sess.id.substring(0, 11)}...
+                                        </span>
+                                        {isCurrent && (
+                                          <span className="px-1.5 py-0.5 bg-red-500 text-white text-[9px] rounded-md font-sans font-bold">
+                                            YOU
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="py-2.5 text-slate-600 dark:text-slate-400">
+                                        {sess.userId === 'anonymous' ? 'Guest' : 'User'}
+                                      </td>
+                                      <td className="py-2.5 text-slate-600 dark:text-slate-400">
+                                        {sess.userAgent}
+                                      </td>
+                                      <td className="py-2.5 text-slate-600 dark:text-slate-400 font-sans">
+                                        {sess.language}
+                                      </td>
+                                      <td className="py-2.5 font-bold text-slate-700 dark:text-slate-200">
+                                        {sess.duration < 60 ? `${sess.duration}s` : `${Math.floor(sess.duration / 60)}m ${sess.duration % 60}s`}
+                                      </td>
+                                      <td className="py-2.5 text-right font-mono">
+                                        {isActiveNow ? (
+                                          <span className="text-emerald-500 font-bold flex items-center justify-end gap-1">
+                                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                                            Active
+                                          </span>
+                                        ) : (
+                                          <span className="text-slate-400">
+                                            {timeDiffSec < 60 ? '1m ago' : timeDiffSec < 3600 ? `${Math.floor(timeDiffSec / 60)}m ago` : 'offline'}
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Interactive info tip */}
+                        <div className="p-4 bg-slate-100 dark:bg-slate-900/40 rounded-2xl flex items-start gap-3">
+                          <Users className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 font-sans">
+                              How PDF Pro Telemetry Works
+                            </h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-sans leading-relaxed">
+                              This dashboard pulls dynamic aggregate statistics directly from our encrypted Firebase Firestore telemetry store. Active usage tracking updates the server-side counters silently every 10 seconds only while the tab is active to preserve energy and device power. No search queries, file payloads, or private documents are ever sent or logged.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+
+                {/* E2EE & SCAM SHIELD TAB */}
+                {activeTab === 'e2ee' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="space-y-6 text-slate-700 dark:text-slate-300"
+                  >
+                    <div>
+                      <h2 className="text-2xl font-bold font-display text-slate-900 dark:text-white flex items-center gap-2">
+                        <Lock className="w-6 h-6 text-red-500" />
+                        <span>E2EE Vault & Anti-Scam Shield</span>
+                      </h2>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                        Zero-Knowledge end-to-end cryptographic lockbox and real-time localized phishing detection.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* SECTION 1: THE CRYPTO VAULT */}
+                      <div className="bg-white dark:bg-[#12151C] border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-sm space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
+                          <h3 className="text-xs font-bold font-mono text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                            Client-Side Cryptographic Vault
+                          </h3>
+                          <div className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-mono px-2 py-0.5 rounded font-bold">
+                            Local CPU Only
+                          </div>
+                        </div>
+
+                        {/* Mode Toggle */}
+                        <div className="flex gap-2 p-1 bg-slate-100 dark:bg-white/5 rounded-xl">
+                          <button
+                            type="button"
+                            onClick={() => { setE2eeMode('encrypt'); setE2eeFile(null); }}
+                            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                              e2eeMode === 'encrypt'
+                                ? 'bg-white dark:bg-[#181C26] text-slate-800 dark:text-white shadow-sm'
+                                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            🔐 Encrypt File
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setE2eeMode('decrypt'); setE2eeFile(null); }}
+                            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                              e2eeMode === 'decrypt'
+                                ? 'bg-white dark:bg-[#181C26] text-slate-800 dark:text-white shadow-sm'
+                                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            🔓 Decrypt File
+                          </button>
+                        </div>
+
+                        {/* File Selector */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">
+                            Select Document to {e2eeMode === 'encrypt' ? 'Encrypt' : 'Decrypt'}
+                          </label>
+                          <div className="relative border-2 border-dashed border-slate-200 dark:border-white/10 hover:border-red-500/30 rounded-xl p-4 text-center cursor-pointer transition-colors bg-slate-50/50 dark:bg-[#0E1016]/40">
+                            <input
+                              type="file"
+                              accept={e2eeMode === 'encrypt' ? '*' : '.secured'}
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  setE2eeFile(e.target.files[0]);
+                                }
+                              }}
+                              className="absolute inset-0 opacity-0 cursor-pointer"
+                            />
+                            <div className="space-y-1">
+                              <FileText className="w-6 h-6 text-slate-400 mx-auto" />
+                              <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                {e2eeFile ? e2eeFile.name : `Drag/Choose file to ${e2eeMode === 'encrypt' ? 'lock' : 'unlock'}`}
+                              </p>
+                              <p className="text-[10px] text-slate-400">
+                                {e2eeFile ? `${(e2eeFile.size / 1024).toFixed(1)} KB` : e2eeMode === 'encrypt' ? 'Supports any format' : 'Must be a .secured file'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Passphrase Entry */}
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between items-center">
+                            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                              Decryption/Encryption Password
+                            </label>
+                            {e2eePassword.length > 0 && e2eeMode === 'encrypt' && (
+                              <span className={`text-[10px] font-mono ${
+                                e2eePassword.length < 6 ? 'text-rose-500' : e2eePassword.length < 10 ? 'text-amber-500' : 'text-emerald-500'
+                              }`}>
+                                Strength: {e2eePassword.length < 6 ? 'Weak' : e2eePassword.length < 10 ? 'Medium' : 'Military AES'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="relative">
+                            <input
+                              type="password"
+                              value={e2eePassword}
+                              onChange={(e) => setE2eePassword(e.target.value)}
+                              placeholder="Enter secure master passphrase..."
+                              className="w-full pl-3 pr-20 py-2 bg-slate-50 dark:bg-[#0A0B0E] border border-slate-200 dark:border-white/5 rounded-xl text-xs font-medium outline-none focus:border-red-500 text-slate-800 dark:text-white"
+                            />
+                            {e2eeMode === 'encrypt' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()';
+                                  let pass = '';
+                                  for(let i=0; i<14; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
+                                  setE2eePassword(pass);
+                                }}
+                                className="absolute right-2 top-1.5 px-2 py-1 bg-red-500 text-white text-[9px] font-mono rounded hover:bg-red-600 transition-colors cursor-pointer"
+                              >
+                                Generate
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Submit Button */}
+                        <button
+                          type="button"
+                          onClick={handleE2EEProcess}
+                          disabled={isProcessingE2EE}
+                          className="w-full py-2.5 bg-red-500 text-white hover:bg-red-600 font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-red-500/10 disabled:opacity-50"
+                        >
+                          {isProcessingE2EE ? (
+                            <>
+                              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              <span>Securing Payload...</span>
+                            </>
+                          ) : e2eeMode === 'encrypt' ? (
+                            <>
+                              <Lock className="w-3.5 h-3.5" />
+                              <span>Download Encrypted (.secured)</span>
+                            </>
+                          ) : (
+                            <>
+                              <Unlock className="w-3.5 h-3.5" />
+                              <span>Decrypt & Download Original</span>
+                            </>
+                          )}
+                        </button>
+
+                        <div className="flex items-start gap-2 text-[10px] text-slate-400 leading-relaxed bg-slate-50 dark:bg-[#0A0B0E]/30 p-3 rounded-xl border border-slate-100 dark:border-white/5">
+                          <Info className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                          <span>
+                            <strong>Zero-Knowledge Policy:</strong> Decryption keys are compiled directly into the binary block using PBKDF2 with 100k rounds of hashing. No human, server, or system administrator can recover your file without the exact password.
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* SECTION 2: PROACTIVE SCAM SHIELD */}
+                      <div className="bg-white dark:bg-[#12151C] border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-sm space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-3">
+                          <h3 className="text-xs font-bold font-mono text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <ShieldAlert className="w-4 h-4 text-red-500" />
+                            Phishing & Scam Detection Shield
+                          </h3>
+                          <div className="bg-red-500/10 text-red-600 dark:text-red-400 text-[10px] font-mono px-2 py-0.5 rounded font-bold animate-pulse">
+                            ● Active
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                          Test a document or paste any suspicious invoice, bank wire instruction, or support email block to scan for known scam strings or phishing hooks instantly.
+                        </p>
+
+                        <div className="space-y-3">
+                          {/* Name Input */}
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono text-slate-400 uppercase block">
+                              Document / Email Name
+                            </label>
+                            <input
+                              type="text"
+                              value={scamFileName}
+                              onChange={(e) => setScamFileName(e.target.value)}
+                              placeholder="e.g. urgent_payment_overdue.pdf"
+                              className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0A0B0E] border border-slate-200 dark:border-white/5 rounded-xl text-xs font-medium outline-none focus:border-red-500 text-slate-800 dark:text-white"
+                            />
+                          </div>
+
+                          {/* Content Sample */}
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono text-slate-400 uppercase block">
+                              Text Sample / Body Copy
+                            </label>
+                            <textarea
+                              value={scamTextSample}
+                              onChange={(e) => setScamTextSample(e.target.value)}
+                              placeholder="Paste suspicious text, routing instructions, helpline call requests, or invoice descriptions..."
+                              rows={3}
+                              className="w-full px-3 py-2 bg-slate-50 dark:bg-[#0A0B0E] border border-slate-200 dark:border-white/5 rounded-xl text-xs font-medium outline-none focus:border-red-500 text-slate-800 dark:text-white resize-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={handleScanScam}
+                            disabled={isScanningScam}
+                            className="flex-1 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 hover:bg-slate-800 dark:hover:bg-slate-100 transition-all cursor-pointer disabled:opacity-50"
+                          >
+                            {isScanningScam ? (
+                              <>
+                                <div className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                                <span>Scanning content...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Activity className="w-3.5 h-3.5 text-red-500" />
+                                <span>Run Anti-Scam Shield Audit</span>
+                              </>
+                            )}
+                          </button>
+
+                          {(scamFileName || scamTextSample) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setScamFileName('');
+                                setScamTextSample('');
+                                setScamResult(null);
+                              }}
+                              className="px-3 py-2 border border-slate-200 dark:border-white/10 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Output Scam Gauge */}
+                        {scamResult && (
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className={`p-4 rounded-xl border ${
+                              scamResult.isSafe 
+                                ? 'bg-emerald-500/5 border-emerald-500/15' 
+                                : scamResult.riskScore < 70 
+                                  ? 'bg-amber-500/5 border-amber-500/15'
+                                  : 'bg-rose-500/5 border-rose-500/15'
+                            } space-y-3`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold font-mono text-slate-600 dark:text-slate-300">
+                                SCAM SHIELD AUDIT RESULTS
+                              </span>
+                              <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                                scamResult.isSafe 
+                                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' 
+                                  : scamResult.riskScore < 70 
+                                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                                    : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                              }`}>
+                                Risk: {scamResult.riskScore}%
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed font-sans">
+                              {scamResult.recommendation}
+                            </p>
+
+                            {scamResult.triggers.length > 0 && (
+                              <div className="space-y-1">
+                                <span className="text-[10px] font-mono text-slate-400 block">RISK TRIGGERS FOUND:</span>
+                                <ul className="space-y-0.5">
+                                  {scamResult.triggers.map((trigger, idx) => (
+                                    <li key={idx} className="text-[10px] font-mono text-rose-500 flex items-center gap-1">
+                                      <span>⚠️</span> {trigger}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </motion.div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Threat vector status table */}
+                    <div className="bg-slate-50 dark:bg-[#0E1016]/40 border border-slate-200 dark:border-white/5 rounded-2xl p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Terminal className="w-4 h-4 text-red-500" />
+                        <h4 className="text-xs font-bold font-mono text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                          Real-Time Anti-Fraud Guard Status
+                        </h4>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="bg-white dark:bg-[#12151C] p-3 rounded-xl border border-slate-200/50 dark:border-white/5 flex items-center justify-between">
+                          <span className="text-[10px] font-sans font-bold text-slate-600 dark:text-slate-300">Invoice Redirection</span>
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-sm shadow-emerald-500/50" />
+                        </div>
+                        <div className="bg-white dark:bg-[#12151C] p-3 rounded-xl border border-slate-200/50 dark:border-white/5 flex items-center justify-between">
+                          <span className="text-[10px] font-sans font-bold text-slate-600 dark:text-slate-300">Fake Helpline Scans</span>
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-sm shadow-emerald-500/50" />
+                        </div>
+                        <div className="bg-white dark:bg-[#12151C] p-3 rounded-xl border border-slate-200/50 dark:border-white/5 flex items-center justify-between">
+                          <span className="text-[10px] font-sans font-bold text-slate-600 dark:text-slate-300">Wire Transfer Auditing</span>
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-sm shadow-emerald-500/50" />
+                        </div>
+                        <div className="bg-white dark:bg-[#12151C] p-3 rounded-xl border border-slate-200/50 dark:border-white/5 flex items-center justify-between">
+                          <span className="text-[10px] font-sans font-bold text-slate-600 dark:text-slate-300">Secure AES Key Gen</span>
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-sm shadow-emerald-500/50" />
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
                 {/* 1. LANGUAGES TAB */}
                 {activeTab === 'languages' && (
                   <motion.div

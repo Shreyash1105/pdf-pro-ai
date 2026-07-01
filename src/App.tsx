@@ -12,6 +12,7 @@ import {
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { collection, addDoc } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
+import { initAnalyticsTracking } from './lib/analytics';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import ToolsGrid, { TOOLS } from './components/ToolsGrid';
@@ -113,6 +114,7 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
+      initAnalyticsTracking(user?.uid);
     });
     return () => unsubscribe();
   }, []);
@@ -692,6 +694,7 @@ export default function App() {
         darkMode={darkMode}
         addToast={addToast}
         onSelectTool={handleSelectTool}
+        currentUser={currentUser}
       />
 
       {/* Legal documents overlay modal (Privacy, Terms, Security Audit) */}

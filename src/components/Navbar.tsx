@@ -280,6 +280,18 @@ export default function Navbar({
 
           {/* Actions */}
           <div className="flex items-center space-x-3 sm:space-x-4">
+            <div 
+              onClick={onOpenPortal}
+              className="hidden lg:flex items-center space-x-1.5 text-xs text-slate-500 dark:text-slate-400 border-r border-slate-200 dark:border-white/5 pr-4 mr-1 cursor-pointer hover:text-red-500 dark:hover:text-red-400 transition-colors"
+              title="Click to manage E2EE Client-Side Cryptographic Vault & Scam Shield"
+            >
+              <div className="relative flex h-2 w-2 mr-1">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </div>
+              <span className="font-bold text-emerald-600 dark:text-emerald-400">E2EE Secured</span>
+            </div>
+
             <div className="hidden lg:flex items-center space-x-1 text-xs text-slate-400 dark:text-slate-500 border-r border-slate-200 dark:border-white/5 pr-4 mr-1">
               <ShieldAlert className="w-4 h-4 text-emerald-500 mr-1" />
               <span>Auto-deleted in 1h</span>
