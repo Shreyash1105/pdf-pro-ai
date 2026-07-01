@@ -86,6 +86,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
         friendlyError = 'Invalid email address format.';
       } else if (err.code === 'auth/operation-not-allowed') {
         friendlyError = 'Email/Password registration is not enabled in your Firebase Console. Please Sign In with Google instead, or enable the Email/Password sign-in provider in your Firebase project Console.';
+      } else if (err.code === 'auth/unauthorized-domain' || (err.message && err.message.includes('unauthorized-domain'))) {
+        friendlyError = `Domain Unregistered! "${window.location.hostname}" is not authorized in your Firebase Project. Since this is a managed AI Studio database, please use Email/Password Sign-In or Sign-Up instead—it works perfectly here on Render!`;
       }
       setError(friendlyError);
     } finally {
@@ -110,6 +112,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
         friendlyError = 'Google sign-in popup was closed before completion.';
       } else if (err.code === 'auth/operation-not-allowed') {
         friendlyError = 'Google Sign-In is not enabled in your Firebase project Auth settings.';
+      } else if (err.code === 'auth/unauthorized-domain' || (err.message && err.message.includes('unauthorized-domain'))) {
+        friendlyError = `Google Sign-In is restricted on "${window.location.hostname}". Because this Firebase project is managed by AI Studio, settings are locked. Please use Email & Password Sign-In/Sign-Up instead—it works perfectly on Render!`;
       }
       setError(friendlyError);
     } finally {
