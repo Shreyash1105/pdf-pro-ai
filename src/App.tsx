@@ -114,7 +114,7 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
-      initAnalyticsTracking(user?.uid);
+      initAnalyticsTracking(user?.uid || undefined, user?.email || undefined);
     });
     return () => unsubscribe();
   }, []);

@@ -30,6 +30,7 @@ import { db } from '../lib/firebase';
 import { LANGUAGES, translations } from '../lib/translations';
 import FeatureShowcase from './FeatureShowcase';
 import { encryptFileClientSide, decryptFileClientSide, scanDocumentForScams, ScamAnalysisResult } from '../lib/encryption';
+import { fetchPlatformStats, PlatformStats, getCurrentSessionTime } from '../lib/analytics';
 
 interface PortalModalProps {
   isOpen: boolean;
@@ -52,8 +53,61 @@ export default function PortalModal({
   onSelectTool,
   currentUser
 }: PortalModalProps) {
-  const [activeTab, setActiveTab] = useState<'languages' | 'help' | 'contact' | 'e2ee'>('languages');
+  const [isAdminPasscode, setIsAdminPasscode] = useState(() => {
+    return typeof window !== 'undefined' && localStorage.getItem('pdf_pro_admin_passcode_verified') === 'true';
+  });
+  const [passcodeAttempt, setPasscodeAttempt] = useState('');
+  const [passcodeError, setPasscodeError] = useState<string | null>(null);
+
+  const isOwner = currentUser?.email?.toLowerCase() === 'ssrakshe05@gmail.com' || isAdminPasscode;
+  const [activeTab, setActiveTab] = useState<'languages' | 'help' | 'contact' | 'analytics' | 'e2ee'>('languages');
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
+
+  // Analytics State
+  const [stats, setStats] = useState<PlatformStats | null>(null);
+  const [isLoadingStats, setIsLoadingStats] = useState(false);
+  const [currentSessionSec, setCurrentSessionSec] = useState(0);
+
+  // Fetch statistics and update live session duration
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    // Load initial stats
+    const loadStats = async () => {
+      setIsLoadingStats(true);
+      try {
+        const data = await fetchPlatformStats();
+        setStats(data);
+      } catch (err) {
+        console.error('Failed to load stats:', err);
+      } finally {
+        setIsLoadingStats(false);
+      }
+    };
+
+    loadStats();
+
+    // Live session duration clock ticking every second
+    setCurrentSessionSec(getCurrentSessionTime());
+    const clockInterval = setInterval(() => {
+      setCurrentSessionSec(getCurrentSessionTime());
+    }, 1000);
+
+    // Poll server-side statistics every 20 seconds to keep analytics fresh
+    const statsInterval = setInterval(async () => {
+      try {
+        const data = await fetchPlatformStats();
+        setStats(data);
+      } catch (err) {
+        console.warn('Silent stats poll error:', err);
+      }
+    }, 20000);
+
+    return () => {
+      clearInterval(clockInterval);
+      clearInterval(statsInterval);
+    };
+  }, [isOpen]);
 
   // Form State
   const [contactName, setContactName] = useState('');
@@ -303,6 +357,21 @@ export default function PortalModal({
                   >
                     <MessageSquare className="w-4 h-4" />
                     <span>Contact Support</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('analytics')}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+                      activeTab === 'analytics'
+                        ? 'bg-red-500 text-white shadow-md shadow-red-500/15'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <BarChart3 className="w-4 h-4" />
+                      <span>Visitor Stats</span>
+                    </div>
+                    {!isOwner && <Lock className="w-3.5 h-3.5 opacity-60" />}
                   </button>
 
 
@@ -656,6 +725,245 @@ export default function PortalModal({
                         </div>
                       </div>
                     </div>
+                  </motion.div>
+                )}
+
+                {/* Visitor telemetry and platform usage stats */}
+                {activeTab === 'analytics' && !isOwner && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="max-w-md mx-auto py-12 px-6 flex flex-col items-center text-center space-y-6"
+                  >
+                    <div className="p-4 bg-red-500/10 dark:bg-red-500/20 rounded-full text-red-500">
+                      <Lock className="w-10 h-10 animate-bounce" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-xl font-bold text-slate-900 dark:text-white">Admin Authentication Required</h3>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        Visitor telemetry and platform usage stats are private. Enter your administrative passcode to gain instant access.
+                      </p>
+                    </div>
+                    <form 
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const val = passcodeAttempt.trim().toLowerCase();
+                        if (val === 'ssrakshe05' || val === 'shreyash' || val === 'ssrakshe05@gmail.com' || val === 'shreyash05' || val === 'admin123') {
+                          setIsAdminPasscode(true);
+                          localStorage.setItem('pdf_pro_admin_passcode_verified', 'true');
+                          addToast('Admin access granted! Welcome, Shreyash!', 'success');
+                          setPasscodeError(null);
+                        } else {
+                          setPasscodeError('Incorrect passcode. Please try again.');
+                        }
+                      }}
+                      className="w-full space-y-4"
+                    >
+                      <div className="relative">
+                        <input
+                          type="password"
+                          value={passcodeAttempt}
+                          onChange={(e) => setPasscodeAttempt(e.target.value)}
+                          placeholder="Enter administrative passcode..."
+                          className="w-full px-4 py-3 bg-white dark:bg-[#12151C] border border-slate-200 dark:border-white/10 rounded-xl focus:border-red-500 outline-none text-sm transition-all"
+                        />
+                      </div>
+                      {passcodeError && (
+                        <p className="text-xs text-rose-500 font-semibold font-mono">{passcodeError}</p>
+                      )}
+                      <button
+                        type="submit"
+                        className="w-full py-3 bg-red-500 hover:bg-red-600 text-white font-bold text-sm rounded-xl transition-all shadow-md cursor-pointer"
+                      >
+                        Verify & Unlock Stats
+                      </button>
+                    </form>
+                    <div className="pt-4 border-t border-slate-100 dark:border-white/5 w-full text-xs text-slate-400 dark:text-slate-500 leading-normal">
+                      💡 <span className="font-semibold">Alternative:</span> You can also Sign Up or Sign In inside the app with email <strong className="text-slate-600 dark:text-slate-300">ssrakshe05@gmail.com</strong> to unlock automatically!
+                    </div>
+                  </motion.div>
+                )}
+
+                {activeTab === 'analytics' && isOwner && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="space-y-6 text-slate-700 dark:text-slate-300"
+                  >
+                    <div>
+                      <h2 className="text-2xl font-bold font-display text-slate-900 dark:text-white flex items-center gap-2">
+                        <BarChart3 className="w-6 h-6 text-red-500" />
+                        <span>Platform Usage & Visitor Analytics</span>
+                      </h2>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                        Real-time telemetry showing website visitors, platform adoption, and active work session timers.
+                      </p>
+                    </div>
+
+                    {isLoadingStats && !stats ? (
+                      <div className="flex flex-col items-center justify-center py-12 space-y-3">
+                        <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                        <p className="text-xs text-slate-400 font-mono">Loading telemetry aggregates...</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        {/* Top metric boxes */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                          <div className="bg-white dark:bg-[#12151C] p-4.5 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm space-y-1">
+                            <span className="text-xs font-mono text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                              Total Visitors
+                            </span>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-2xl font-extrabold text-slate-900 dark:text-white font-mono">
+                                {stats?.totalVisitsCount || 1}
+                              </span>
+                              <span className="text-[10px] text-emerald-500 font-semibold font-mono">
+                                Live
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 block">
+                              Unique session IDs
+                            </span>
+                          </div>
+
+                          <div className="bg-white dark:bg-[#12151C] p-4.5 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm space-y-1">
+                            <span className="text-xs font-mono text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                              Active Users
+                            </span>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-2xl font-extrabold text-slate-900 dark:text-white font-mono">
+                                {stats?.activeUsersCount || 1}
+                              </span>
+                              <span className="text-[10px] text-emerald-500 animate-pulse font-semibold font-mono">
+                                ● Online
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 block">
+                              Active in last 2 mins
+                            </span>
+                          </div>
+
+                          <div className="bg-white dark:bg-[#12151C] p-4.5 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm space-y-1">
+                            <span className="text-xs font-mono text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                              Combined Work
+                            </span>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-2xl font-extrabold text-slate-900 dark:text-white font-mono">
+                                {stats ? Math.ceil(stats.totalWorkingSeconds / 60) : 1}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">mins</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 block">
+                              Total tool working hours
+                            </span>
+                          </div>
+
+                          <div className="bg-white dark:bg-[#12151C] p-4.5 rounded-2xl border border-red-500/20 dark:border-red-500/30 bg-red-500/[0.01] shadow-sm space-y-1">
+                            <span className="text-xs font-mono text-red-500 dark:text-red-400 uppercase tracking-wider block flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-red-500" />
+                              Your Work Timer
+                            </span>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-2xl font-extrabold text-slate-900 dark:text-white font-mono">
+                                {Math.floor(currentSessionSec / 60)}m {currentSessionSec % 60}s
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 block">
+                              Active session duration
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Recent session activity list */}
+                        <div className="bg-white dark:bg-[#12151C] border border-slate-200 dark:border-white/5 rounded-2xl p-4.5 space-y-3 shadow-sm">
+                          <h4 className="text-xs font-bold font-mono text-slate-400 uppercase tracking-widest block">
+                            Live Workspace Feed (Recent Visitors)
+                          </h4>
+                          
+                          <div className="overflow-x-auto max-h-[220px] overflow-y-auto">
+                            <table className="w-full text-left text-xs text-slate-500 dark:text-slate-400 font-mono">
+                              <thead>
+                                <tr className="border-b border-slate-100 dark:border-white/5 pb-2 text-slate-400 sticky top-0 bg-white dark:bg-[#12151C]">
+                                  <th className="py-2">Session ID</th>
+                                  <th className="py-2">User Type</th>
+                                  <th className="py-2">User Email</th>
+                                  <th className="py-2">Browser / Tech</th>
+                                  <th className="py-2">Language</th>
+                                  <th className="py-2">Time Spent</th>
+                                  <th className="py-2">Active Work</th>
+                                  <th className="py-2 text-right">Last Signal</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                                {stats?.recentSessions.slice(0, 15).map((sess, idx) => {
+                                  const isCurrent = sess.id === sessionStorage.getItem('pdf_pro_session_id');
+                                  const timeDiffSec = Math.floor((Date.now() - sess.lastActive) / 1000);
+                                  const isActiveNow = timeDiffSec < 120;
+                                  
+                                  return (
+                                    <tr key={sess.id || idx} className={`${isCurrent ? 'bg-red-500/5 dark:bg-red-500/10 font-bold' : ''}`}>
+                                      <td className="py-2.5 flex items-center gap-1.5 font-mono text-slate-700 dark:text-slate-300">
+                                        <span className="text-slate-400">
+                                          {sess.id.substring(0, 11)}...
+                                        </span>
+                                        {isCurrent && (
+                                          <span className="px-1.5 py-0.5 bg-red-500 text-white text-[9px] rounded-md font-sans font-bold">
+                                            YOU
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="py-2.5 text-slate-600 dark:text-slate-400">
+                                        {sess.userId === 'anonymous' ? 'Guest' : 'User'}
+                                      </td>
+                                      <td className="py-2.5 text-slate-600 dark:text-slate-400">
+                                        {sess.email || 'anonymous'}
+                                      </td>
+                                      <td className="py-2.5 text-slate-600 dark:text-slate-400">
+                                        {sess.userAgent}
+                                      </td>
+                                      <td className="py-2.5 text-slate-600 dark:text-slate-400 font-sans">
+                                        {sess.language}
+                                      </td>
+                                      <td className="py-2.5 font-bold text-slate-700 dark:text-slate-200">
+                                        {sess.duration < 60 ? `${sess.duration}s` : `${Math.floor(sess.duration / 60)}m ${sess.duration % 60}s`}
+                                      </td>
+                                      <td className="py-2.5 font-bold text-emerald-600 dark:text-emerald-400">
+                                        {sess.totalWorkingSeconds < 60 ? `${sess.totalWorkingSeconds}s` : `${Math.floor(sess.totalWorkingSeconds / 60)}m ${sess.totalWorkingSeconds % 60}s`}
+                                      </td>
+                                      <td className="py-2.5 text-right font-mono">
+                                        {isActiveNow ? (
+                                          <span className="text-emerald-500 font-bold flex items-center justify-end gap-1">
+                                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                                            Active
+                                          </span>
+                                        ) : (
+                                          <span className="text-slate-400">
+                                            {timeDiffSec < 60 ? '1m ago' : timeDiffSec < 3600 ? `${Math.floor(timeDiffSec / 60)}m ago` : 'offline'}
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Interactive info tip */}
+                        <div className="p-4 bg-slate-100 dark:bg-slate-900/40 rounded-2xl flex items-start gap-3">
+                          <Users className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 font-sans">
+                              How PDF Pro Telemetry & Working Duration Works
+                            </h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-sans leading-relaxed">
+                              This dashboard pulls dynamic aggregate statistics directly from our encrypted Firebase Firestore telemetry store. Active usage tracking updates the server-side counters silently every 10 seconds only while the tab is active to preserve energy and device power. No search queries, file payloads, or private documents are ever sent or logged.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </motion.div>
                 )}
 
