@@ -104,6 +104,7 @@ export interface ProcessingOptions {
   signatureText?: string;
   redactPhrases?: string;
   targetLanguage?: string;
+  edits?: string;
 }
 
 export interface ToastItem {

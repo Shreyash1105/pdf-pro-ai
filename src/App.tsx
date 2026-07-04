@@ -319,6 +319,7 @@ export default function App() {
       if (options.signatureText) formData.append('signatureText', options.signatureText);
       if (options.redactPhrases) formData.append('redactPhrases', options.redactPhrases);
       if (options.targetLanguage) formData.append('targetLanguage', options.targetLanguage);
+      if (options.edits) formData.append('edits', options.edits);
 
       const response = await fetch(`/api/convert/${selectedToolId}`, {
         method: 'POST',
@@ -516,7 +517,7 @@ export default function App() {
                   📁 {t.freeBatchProcessing}
                 </span>
                 <span className="bg-white dark:bg-[#12151C] px-3.5 py-2 rounded-xl border border-slate-100 dark:border-white/5 shadow-sm hover:scale-102 transition-transform cursor-default">
-                  🤖 {t.geminiEnhanced}
+                  🤖 {t.aiEnhanced}
                 </span>
               </div>
             </div>

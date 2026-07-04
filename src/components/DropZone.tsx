@@ -214,12 +214,12 @@ export default function DropZone({
           isProcessing={isProcessing} 
         />
       )}
-      {files.length > 0 && tool.id === 'visual-editor' && (
+      {files.length > 0 && (tool.id === 'visual-editor' || tool.id === 'edit-pdf') && (
         <VisualEditorTool 
           fileItem={files[0]} 
           onReset={() => onRemoveFile(files[0].id)} 
-          onSave={(text, x, y) => { 
-            onUpdateOptions({ editText: text, editX: x, editY: y }); 
+          onSave={(editsJson) => { 
+            onUpdateOptions({ edits: editsJson }); 
             setTimeout(onProcess, 50); 
           }} 
           isProcessing={isProcessing} 
@@ -455,7 +455,7 @@ export default function DropZone({
                       Auto-Optimize (AI Backend)
                     </label>
                     <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
-                      Detects your document type (text vs. image-heavy) and structure using Gemini AI to automatically select the optimal compression, encoding, and format settings.
+                      Detects your document type (text vs. image-heavy) and structure using Proprietary AI Models to automatically select the optimal compression, encoding, and format settings.
                     </p>
                   </div>
                 </div>
@@ -726,7 +726,7 @@ export default function DropZone({
                   ))}
                 </div>
                 <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-normal mt-1">
-                  Our advanced Gemini OCR reads scan lines, text blocks, and structured files, then converts them to your chosen editable format.
+                  Our advanced AI OCR engine reads scan lines, text blocks, and structured files, then converts them to your chosen editable format.
                 </p>
               </div>
             )}
@@ -759,44 +759,7 @@ export default function DropZone({
               </div>
             )}
 
-            {/* Edit PDF settings */}
-            {tool.id === 'edit-pdf' && (
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                    <PenTool className="w-3.5 h-3.5 text-rose-500" />
-                    Annotation Text Overlay
-                  </label>
-                  <input
-                    type="text"
-                    value={options.editText || ''}
-                    onChange={(e) => onUpdateOptions({ editText: e.target.value })}
-                    placeholder="Enter text to overlay on the PDF"
-                    className="w-full text-sm bg-white dark:bg-[#12151C] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2 text-slate-800 dark:text-slate-100 outline-none focus:border-red-500 transition-all"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-semibold text-slate-500">X Position (pts)</label>
-                    <input
-                      type="number"
-                      value={options.editX ?? 50}
-                      onChange={(e) => onUpdateOptions({ editX: parseInt(e.target.value) || 0 })}
-                      className="w-full text-xs bg-white dark:bg-[#12151C] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 outline-none focus:border-red-500 text-slate-800 dark:text-slate-100"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-semibold text-slate-500">Y Position (pts)</label>
-                    <input
-                      type="number"
-                      value={options.editY ?? 50}
-                      onChange={(e) => onUpdateOptions({ editY: parseInt(e.target.value) || 0 })}
-                      className="w-full text-xs bg-white dark:bg-[#12151C] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 outline-none focus:border-red-500 text-slate-800 dark:text-slate-100"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+
 
             {/* PDF Forms settings */}
             {tool.id === 'pdf-forms' && (
@@ -895,7 +858,7 @@ export default function DropZone({
                   ))}
                 </select>
                 <p className="text-[10px] text-slate-400 dark:text-slate-500">
-                  Translates extracted text into your target language using advanced Gemini translation models.
+                  Translates extracted text into your target language using advanced AI translation models.
                 </p>
               </div>
             )}
@@ -916,7 +879,7 @@ export default function DropZone({
                     AI-Enhanced Preserved Layout
                   </label>
                   <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
-                    Uses Gemini AI models to analyze the document structure, preserving headings, bold weights, bullet points, and tabulations directly inside the output file.
+                    Uses advanced AI models to analyze the document structure, preserving headings, bold weights, bullet points, and tabulations directly inside the output file.
                   </p>
                 </div>
               </div>

@@ -4,14 +4,12 @@ import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import multer from 'multer';
 import { PDFDocument, degrees, StandardFonts, rgb } from 'pdf-lib';
-import * as pdfImport from 'pdf-parse';
+import { PDFParse } from 'pdf-parse';
 
 async function parsePdfToText(fileBuffer: Buffer): Promise<{ text: string }> {
   try {
-    // pdf-parse is exported as module.exports or default depending on system bundle interop
-    const pdfModule = pdfImport as any;
-    const parseFn = pdfModule.default || pdfModule;
-    const parsed = await parseFn(fileBuffer);
+    const parser = new PDFParse({ data: fileBuffer });
+    const parsed = await parser.getText();
     return { text: parsed.text || '' };
   } catch (err) {
     console.error('[parsePdfToText]: Failed to parse PDF', err);
@@ -229,8 +227,8 @@ const app = express();
 const PORT = 3000;
 
 // Enable JSON payload parsing for options
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '150mb' }));
+app.use(express.urlencoded({ extended: true, limit: '150mb' }));
 
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
 const PROCESSED_DIR = path.join(process.cwd(), 'processed');
@@ -249,7 +247,13 @@ const storage = multer.diskStorage({
     cb(null, `${uniqueSuffix}-${file.originalname}`);
   },
 });
-const upload = multer({ storage });
+const upload = multer({ 
+  storage,
+  limits: {
+    fileSize: 150 * 1024 * 1024, // 150MB per file
+    fieldSize: 150 * 1024 * 1024 // 150MB for fields
+  }
+});
 
 // Serve processed files statically
 app.use('/processed', express.static(PROCESSED_DIR));
@@ -2737,7 +2741,7 @@ app.post('/api/convert/ocr-scanner', upload.single('file'), async (req, res) => 
       docChildren.push(new Paragraph({
         children: [
           new TextRun({
-            text: `Source File: ${file.originalname} • Scanned via Gemini AI OCR`,
+            text: `Source File: ${file.originalname} • Scanned via Enterprise AI OCR`,
             italics: true,
             size: 18,
             color: '64748B',
@@ -3463,19 +3467,108 @@ app.post('/api/convert/crop-pdf', upload.single('file'), async (req, res) => {
 app.post('/api/convert/edit-pdf', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
-    const { editText = 'Annotated Page', editX = '50', editY = '50' } = req.body;
     if (!file) return res.status(400).json({ error: 'Please upload a PDF file.' });
 
     const fileBytes = fs.readFileSync(file.path);
     const pdfDoc = await PDFDocument.load(fileBytes);
-    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    
     const pages = pdfDoc.getPages();
-    if (pages.length > 0) {
-      const firstPage = pages[0];
-      const x = parseFloat(editX) || 50;
-      const y = parseFloat(editY) || 50;
-      firstPage.drawText(sanitizeWinAnsi(editText), { x, y, size: 14, font, color: rgb(0.9, 0.1, 0.1) });
+
+    // Helper to parse colors
+    const parseColor = (colorStr: string): { r: number; g: number; b: number } => {
+      if (!colorStr) return { r: 0, g: 0, b: 0 };
+      const str = colorStr.toLowerCase();
+      if (str.startsWith('#')) {
+        const r = parseInt(str.slice(1, 3), 16) / 255;
+        const g = parseInt(str.slice(3, 5), 16) / 255;
+        const b = parseInt(str.slice(5, 7), 16) / 255;
+        return { r: isNaN(r) ? 0 : r, g: isNaN(g) ? 0 : g, b: isNaN(b) ? 0 : b };
+      }
+      const colors: { [key: string]: { r: number; g: number; b: number } } = {
+        red: { r: 0.9, g: 0.1, b: 0.1 },
+        blue: { r: 0.1, g: 0.3, b: 0.9 },
+        green: { r: 0.1, g: 0.7, b: 0.2 },
+        black: { r: 0, g: 0, b: 0 },
+        white: { r: 1, g: 1, b: 1 },
+        gray: { r: 0.5, g: 0.5, b: 0.5 },
+      };
+      return colors[str] || { r: 0, g: 0, b: 0 };
+    };
+
+    // Helper to get Standard Font
+    const fontCache: { [key: string]: any } = {};
+    const getCachedFont = async (fontName: string) => {
+      const isBold = fontName.toLowerCase().includes('bold');
+      let standardName = StandardFonts.Helvetica;
+      if (fontName.toLowerCase().includes('times')) {
+        standardName = isBold ? StandardFonts.TimesRomanBold : StandardFonts.TimesRoman;
+      } else if (fontName.toLowerCase().includes('courier')) {
+        standardName = isBold ? StandardFonts.CourierBold : StandardFonts.Courier;
+      } else {
+        standardName = isBold ? StandardFonts.HelveticaBold : StandardFonts.Helvetica;
+      }
+      if (!fontCache[standardName]) {
+        fontCache[standardName] = await pdfDoc.embedFont(standardName);
+      }
+      return fontCache[standardName];
+    };
+
+    let editsList = [];
+    if (req.body.edits) {
+      try {
+        editsList = JSON.parse(req.body.edits);
+      } catch (e) {
+        console.error('Failed to parse edits JSON:', e);
+      }
+    } else if (req.body.editText) {
+      const { editText, editX = '50', editY = '50' } = req.body;
+      editsList = [{
+        text: editText,
+        x: parseFloat(editX) || 50,
+        y: parseFloat(editY) || 50,
+        fontFamily: 'Helvetica-Bold',
+        fontSize: 14,
+        color: 'red',
+        whiteout: false,
+        pageIndex: 0
+      }];
+    }
+
+    for (const editItem of editsList) {
+      const { text, x, y, fontFamily = 'Helvetica-Bold', fontSize = 14, color = 'red', whiteout = false, pageIndex = 0 } = editItem;
+      if (!text || text.trim() === '') continue;
+
+      const targetPageIndex = Math.max(0, Math.min(pages.length - 1, pageIndex));
+      const targetPage = pages[targetPageIndex];
+      const { width, height } = targetPage.getSize();
+
+      // Convert percentages to standard coordinates
+      const absX = (x / 100) * width;
+      const absY = height - ((y / 100) * height);
+
+      const font = await getCachedFont(fontFamily);
+      const colorObj = parseColor(color);
+      const sizeVal = parseFloat(fontSize) || 14;
+
+      if (whiteout) {
+        // Draw solid background to cover original text
+        const estWidth = text.length * sizeVal * 0.55;
+        const estHeight = sizeVal * 1.4;
+        targetPage.drawRectangle({
+          x: absX - 2,
+          y: absY - (estHeight * 0.2),
+          width: estWidth + 4,
+          height: estHeight,
+          color: rgb(1, 1, 1),
+        });
+      }
+
+      targetPage.drawText(sanitizeWinAnsi(text), {
+        x: absX,
+        y: absY,
+        size: sizeVal,
+        font,
+        color: rgb(colorObj.r, colorObj.g, colorObj.b),
+      });
     }
 
     const bytes = await pdfDoc.save();
@@ -3494,6 +3587,95 @@ app.post('/api/convert/edit-pdf', upload.single('file'), async (req, res) => {
   } catch (error: any) {
     console.error('Edit error:', error);
     res.status(500).json({ error: error.message || 'Failed to edit PDF.' });
+  }
+});
+
+// Endpoint to extract text blocks and layout from PDF for interactive Sejda-style editing
+app.post('/api/convert/extract-pdf-text-blocks', upload.single('file'), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'Please upload a PDF file.' });
+
+    const fileBytes = fs.readFileSync(file.path);
+    const parsedText = await parsePdfToText(fileBytes);
+    
+    // Get page count
+    const pdfDoc = await PDFDocument.load(fileBytes);
+    const pagesCount = pdfDoc.getPageCount();
+
+    // Split text into lines, trim and filter out short/empty/unreadable lines
+    const lines = parsedText.text
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 2 && line.length < 150);
+
+    const uniqueLines = Array.from(new Set(lines));
+    let enrichedBlocks: any[] = [];
+    
+    try {
+      const ai = getGeminiClient();
+      if (ai && uniqueLines.length > 0) {
+        // Sample up to 25 interesting lines to keep prompt compact and fast
+        const sampleLines = uniqueLines.slice(0, 25);
+        
+        const prompt = `You are a PDF layout analyzer. Here are some text blocks extracted from a PDF document:\n${JSON.stringify(sampleLines)}\n\nAnalyze these text blocks and identify which ones represent:
+1. Document Title
+2. Section Headings
+3. Key Subtitles
+4. Paragraph lines
+5. Important labels (dates, authors, company names)
+
+For each block, estimate:
+- "text": the original exact text content
+- "type": "title" | "heading" | "subtitle" | "paragraph" | "label"
+- "estimatedFontSize": estimated font size in pixels (Title = 24-32, Heading = 16-20, Paragraph = 10-12, Label = 9-11)
+- "estimatedX": estimated horizontal percentage coordinate (0 to 100) from the left (center title is 50, left heading is 10)
+- "estimatedY": estimated vertical percentage coordinate (0 to 100) from the top (title is 15, headers are 25, content is 40)
+- "fontFamily": "Helvetica" | "Times-Roman" | "Courier"
+
+Return a clean JSON array of objects with the fields: "text", "type", "estimatedFontSize", "estimatedX", "estimatedY", "fontFamily". Return ONLY the JSON code block, no markdown formatting outside the code block.`;
+
+        const response = await generateContentWithRetry(ai, {
+          model: 'gemini-3.5-flash',
+          contents: prompt,
+        });
+
+        const respText = response.text || '';
+        const match = respText.match(/\[[\s\S]*\]/);
+        if (match) {
+          enrichedBlocks = JSON.parse(match[0]);
+        }
+      }
+    } catch (aiErr) {
+      console.warn('[extract-pdf-text-blocks] Gemini categorization skipped/failed:', aiErr);
+    }
+
+    // Fallback if Gemini failed or wasn't used: build basic sequential layout estimate
+    if (!enrichedBlocks || enrichedBlocks.length === 0) {
+      enrichedBlocks = uniqueLines.slice(0, 15).map((line, idx) => {
+        const isHeader = line.length < 40 && (line.toUpperCase() === line || line.split(' ').length < 5);
+        return {
+          text: line,
+          type: isHeader ? 'heading' : 'paragraph',
+          estimatedFontSize: isHeader ? 16 : 11,
+          estimatedX: 10,
+          estimatedY: 15 + idx * 5, // space out sequentially
+          fontFamily: 'Helvetica',
+        };
+      });
+    }
+
+    // Delete uploaded file
+    try { fs.unlinkSync(file.path); } catch {}
+
+    res.json({
+      success: true,
+      blocks: enrichedBlocks,
+      pagesCount
+    });
+  } catch (error: any) {
+    console.error('Extract PDF text blocks error:', error);
+    res.status(500).json({ error: error.message || 'Failed to extract PDF text blocks.' });
   }
 });
 
@@ -4161,7 +4343,7 @@ app.post('/api/convert/ai-chat', upload.single('file'), async (req, res) => {
 
     const ai = getGeminiClient();
     const response = await generateContentWithRetry(ai, {
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash',
       contents: `You are an expert reading assistant. Underneath is the extracted plain text of the document named "${file.originalname}":
 
 --- START DOCUMENT ---
@@ -4228,7 +4410,7 @@ Ensure there are exactly 5 quizQuestions and exactly 5 flashcards.
 Return ONLY the raw JSON object, with no markdown wrappers or surrounding backticks outside the json.`;
 
     const response = await generateContentWithRetry(ai, {
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -4314,7 +4496,7 @@ Ensure there are at least 3-5 items in coreObligations, paymentTerms, keyDeadlin
 Return ONLY the raw JSON object, with no markdown wrappers or surrounding backticks outside the json.`;
 
     const response = await generateContentWithRetry(ai, {
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -4394,22 +4576,112 @@ app.post('/api/convert/visual-organizer', upload.single('file'), async (req, res
 app.post('/api/convert/visual-editor', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
-    const { editText = 'Annotated Page', editX = '150', editY = '250' } = req.body;
     if (!file) return res.status(400).json({ error: 'Please upload a PDF file.' });
 
     const fileBytes = fs.readFileSync(file.path);
     const pdfDoc = await PDFDocument.load(fileBytes);
-    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    
     const pages = pdfDoc.getPages();
-    if (pages.length > 0) {
-      const firstPage = pages[0];
-      const x = parseFloat(editX) || 150;
-      const y = parseFloat(editY) || 250;
-      
-      // Basic sanitization
-      const cleanText = editText.replace(/[^\x20-\x7E]/g, '');
-      firstPage.drawText(cleanText, { x, y, size: 14, font, color: rgb(0.9, 0.1, 0.1) });
+
+    // Helper to parse colors
+    const parseColor = (colorStr: string): { r: number; g: number; b: number } => {
+      if (!colorStr) return { r: 0, g: 0, b: 0 };
+      const str = colorStr.toLowerCase();
+      if (str.startsWith('#')) {
+        const r = parseInt(str.slice(1, 3), 16) / 255;
+        const g = parseInt(str.slice(3, 5), 16) / 255;
+        const b = parseInt(str.slice(5, 7), 16) / 255;
+        return { r: isNaN(r) ? 0 : r, g: isNaN(g) ? 0 : g, b: isNaN(b) ? 0 : b };
+      }
+      const colors: { [key: string]: { r: number; g: number; b: number } } = {
+        red: { r: 0.9, g: 0.1, b: 0.1 },
+        blue: { r: 0.1, g: 0.3, b: 0.9 },
+        green: { r: 0.1, g: 0.7, b: 0.2 },
+        black: { r: 0, g: 0, b: 0 },
+        white: { r: 1, g: 1, b: 1 },
+        gray: { r: 0.5, g: 0.5, b: 0.5 },
+      };
+      return colors[str] || { r: 0, g: 0, b: 0 };
+    };
+
+    // Helper to get Standard Font
+    const fontCache: { [key: string]: any } = {};
+    const getCachedFont = async (fontName: string) => {
+      const isBold = fontName.toLowerCase().includes('bold');
+      let standardName = StandardFonts.Helvetica;
+      if (fontName.toLowerCase().includes('times')) {
+        standardName = isBold ? StandardFonts.TimesRomanBold : StandardFonts.TimesRoman;
+      } else if (fontName.toLowerCase().includes('courier')) {
+        standardName = isBold ? StandardFonts.CourierBold : StandardFonts.Courier;
+      } else {
+        standardName = isBold ? StandardFonts.HelveticaBold : StandardFonts.Helvetica;
+      }
+      if (!fontCache[standardName]) {
+        fontCache[standardName] = await pdfDoc.embedFont(standardName);
+      }
+      return fontCache[standardName];
+    };
+
+    let editsList = [];
+    if (req.body.edits) {
+      try {
+        editsList = JSON.parse(req.body.edits);
+      } catch (e) {
+        console.error('Failed to parse edits JSON:', e);
+      }
+    } else if (req.body.editText) {
+      const { editText, editX = '50', editY = '50' } = req.body;
+      editsList = [{
+        text: editText,
+        x: parseFloat(editX) || 50,
+        y: parseFloat(editY) || 50,
+        fontFamily: 'Helvetica-Bold',
+        fontSize: 14,
+        color: 'red',
+        whiteout: false,
+        pageIndex: 0
+      }];
+    }
+
+    for (const editItem of editsList) {
+      const { text, x, y, fontFamily = 'Helvetica-Bold', fontSize = 14, color = 'red', whiteout = false, pageIndex = 0 } = editItem;
+      // Skip empty highlights or spacing/empty overrides unless whiteout is toggled
+      if ((!text || text.trim() === '') && !whiteout) continue;
+
+      const targetPageIndex = Math.max(0, Math.min(pages.length - 1, pageIndex));
+      const targetPage = pages[targetPageIndex];
+      const { width, height } = targetPage.getSize();
+
+      // Convert percentages to standard coordinates
+      const absX = (x / 100) * width;
+      const absY = height - ((y / 100) * height);
+
+      const font = await getCachedFont(fontFamily);
+      const colorObj = parseColor(color);
+      const sizeVal = parseFloat(fontSize) || 14;
+
+      if (whiteout) {
+        // Draw solid background to cover original text
+        const rectWidth = editItem.width ? (editItem.width / 100) * width : (Math.max(1, text.length) * sizeVal * 0.55);
+        const rectHeight = editItem.height ? (editItem.height / 100) * height : (sizeVal * 1.4);
+        targetPage.drawRectangle({
+          x: absX,
+          y: absY - rectHeight + (sizeVal * 0.1),
+          width: rectWidth + 2,
+          height: rectHeight + 2,
+          color: rgb(1, 1, 1),
+        });
+      }
+
+      // Only draw text if there is actual content (spacing whiteout is just a cover)
+      if (text && text.trim() !== '') {
+        targetPage.drawText(sanitizeWinAnsi(text), {
+          x: absX,
+          y: absY - sizeVal + (sizeVal * 0.1), // Align text baseline inside the box correctly
+          size: sizeVal,
+          font,
+          color: rgb(colorObj.r, colorObj.g, colorObj.b),
+        });
+      }
     }
 
     const bytes = await pdfDoc.save();

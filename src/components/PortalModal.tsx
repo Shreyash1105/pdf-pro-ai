@@ -224,7 +224,7 @@ export default function PortalModal({
     },
     {
       q: 'Can I convert my scanned PDFs to an editable document?',
-      a: 'Yes! Our service includes an advanced Gemini AI-powered OCR (Optical Character Recognition) engine that scans text and layout, allowing you to convert scanned PDFs or images into fully editable Plain Text (.txt) or Microsoft Word (.docx) documents with absolute high-fidelity accuracy.'
+      a: 'Yes! Our service includes an advanced AI-powered OCR (Optical Character Recognition) engine that scans text and layout, allowing you to convert scanned PDFs or images into fully editable Plain Text (.txt) or Microsoft Word (.docx) documents with absolute high-fidelity accuracy.'
     },
     {
       q: 'Why does my conversion take so long?',

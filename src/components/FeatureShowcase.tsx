@@ -844,7 +844,7 @@ export default function FeatureShowcase({ activeLanguage, onSelectTool }: Featur
 
             <div className="pt-6">
               <span className="text-[10px] font-mono font-bold text-indigo-500 flex items-center gap-1 cursor-pointer hover:underline">
-                Powered by Gemini 2.5 Pro <ChevronRight className="w-3.5 h-3.5" />
+                Powered by Enterprise AI <ChevronRight className="w-3.5 h-3.5" />
               </span>
             </div>
           </div>

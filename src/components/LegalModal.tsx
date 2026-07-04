@@ -225,7 +225,7 @@ export default function LegalModal({ isOpen, onClose, initialTab }: LegalModalPr
                         We do **NOT** sell, rent, trade, or share your document contents or metadata with external advertising firms or other parties.
                       </p>
                       <p>
-                        To execute advanced AI OCR capabilities, we safely proxy textual frames to Google's highly secure Gemini API nodes. This transmission is encrypted end-to-end, and the parameters guarantee that Google does not retain or use your document contents to train public neural network models.
+                        To execute advanced AI OCR capabilities, we safely proxy textual frames to Google's highly secure Cloud AI API nodes. This transmission is encrypted end-to-end, and the parameters guarantee that Google does not retain or use your document contents to train public neural network models.
                       </p>
                     </section>
 

@@ -390,7 +390,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     id: 'ai-summarize',
     title: 'AI Summarizer',
-    description: 'Instantly summarize lengthy PDFs, books, or articles into key bullet points using Gemini.',
+    description: 'Instantly summarize lengthy PDFs, books, or articles into key bullet points using Advanced AI.',
     category: 'intelligence',
     iconName: 'Sparkles',
     colorClass: 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/15',
@@ -400,7 +400,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     id: 'ai-translate',
     title: 'Translate PDF',
-    description: 'Automatically translate extracted PDF text into any target language using Gemini.',
+    description: 'Automatically translate extracted PDF text into any target language using Advanced AI.',
     category: 'intelligence',
     iconName: 'Languages',
     colorClass: 'bg-purple-600 hover:bg-purple-700 shadow-purple-600/15',
@@ -415,7 +415,7 @@ export const TOOLS: ToolDefinition[] = [
     iconName: 'MessageSquare',
     colorClass: 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/15',
     allowedInputTypes: ['.pdf'],
-    outputType: '.txt'
+    outputType: '.pdf'
   },
   {
     id: 'ai-study',
@@ -425,7 +425,7 @@ export const TOOLS: ToolDefinition[] = [
     iconName: 'GraduationCap',
     colorClass: 'bg-gradient-to-tr from-amber-500 via-red-500 to-rose-600 hover:from-amber-600 hover:via-red-600 hover:to-rose-700 shadow-rose-500/15',
     allowedInputTypes: ['.pdf'],
-    outputType: '.txt'
+    outputType: '.pdf'
   },
   {
     id: 'ai-contract',
@@ -435,7 +435,7 @@ export const TOOLS: ToolDefinition[] = [
     iconName: 'Briefcase',
     colorClass: 'bg-gradient-to-tr from-emerald-500 via-teal-500 to-cyan-600 hover:from-emerald-600 hover:via-teal-600 hover:to-cyan-700 shadow-emerald-500/15',
     allowedInputTypes: ['.pdf'],
-    outputType: '.txt'
+    outputType: '.pdf'
   },
   {
     id: 'visual-organizer',
@@ -525,10 +525,10 @@ export const IconMapper: Record<string, any> = {
 export default function ToolsGrid({ onSelectTool, activeToolId }: ToolsGridProps) {
   const getCategories = () => {
     return [
+      { id: 'convert-from', title: 'Convert From PDF', types: ['convert-from'] },
+      { id: 'convert-to', title: 'Convert To PDF', types: ['convert-to'] },
       { id: 'organize', title: 'Organize PDF', types: ['organize'] },
       { id: 'optimize', title: 'Optimize PDF', types: ['optimize'] },
-      { id: 'convert-to', title: 'Convert To PDF', types: ['convert-to'] },
-      { id: 'convert-from', title: 'Convert From PDF', types: ['convert-from'] },
       { id: 'edit-pdf', title: 'Edit PDF', types: ['edit-pdf'] },
       { id: 'security', title: 'PDF Security', types: ['security'] },
       { id: 'intelligence', title: 'PDF Intelligence', types: ['intelligence'] }
