@@ -71,14 +71,22 @@ export default function AIChatTool({ fileItem, onReset }: AIChatToolProps) {
     try {
       const response = await fetch('/api/convert/ai-chat', {
         method: 'POST',
-        body: formData
+        body: formData,
+        credentials: 'include',
       });
 
-      if (!response.ok) {
-        throw new Error('Could not get answer from the server.');
+      const responseText = await response.text();
+      const isSandboxAuthRedirect = responseText.includes('Action required to load your app') || responseText.includes('click the button below to load');
+
+      if (isSandboxAuthRedirect) {
+        throw new Error("⚠️ Preview Server Authorization Required: This app is currently loaded inside an iframe where the browser disables third-party cookies. Please open the application in a new browser tab (by clicking the 'Open in New Tab' icon in the top right of the preview pane) to authorize the server. Once opened, everything will work perfectly!");
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(responseText || 'Could not get answer from the server.');
+      }
+
+      const data = JSON.parse(responseText);
       
       const botMsg: Message = {
         id: Math.random().toString(36).substring(2, 9),

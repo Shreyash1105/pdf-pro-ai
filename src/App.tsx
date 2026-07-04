@@ -326,6 +326,7 @@ export default function App() {
       const response = await fetch(`/api/convert/${selectedToolId}`, {
         method: 'POST',
         body: formData,
+        credentials: 'include',
       });
 
       const responseText = await response.text();
@@ -337,6 +338,12 @@ export default function App() {
         isJson = true;
       } catch (e) {
         isJson = false;
+      }
+
+      const isSandboxAuthRedirect = responseText.includes('Action required to load your app') || responseText.includes('click the button below to load');
+
+      if (isSandboxAuthRedirect) {
+        throw new Error("⚠️ Preview Server Authorization Required: This app is currently loaded inside an iframe where the browser disables third-party cookies. Please open the application in a new browser tab (by clicking the 'Open in New Tab' icon in the top right of the preview pane) to authorize the server. Once opened, everything will work perfectly!");
       }
 
       if (!response.ok) {

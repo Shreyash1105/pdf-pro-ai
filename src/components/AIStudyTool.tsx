@@ -71,15 +71,22 @@ export default function AIStudyTool({ fileItem, onReset }: AIStudyToolProps) {
     try {
       const response = await fetch('/api/convert/ai-study', {
         method: 'POST',
-        body: formData
+        body: formData,
+        credentials: 'include',
       });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText || 'Could not generate study materials from this document.');
+      const responseText = await response.text();
+      const isSandboxAuthRedirect = responseText.includes('Action required to load your app') || responseText.includes('click the button below to load');
+
+      if (isSandboxAuthRedirect) {
+        throw new Error("⚠️ Preview Server Authorization Required: This app is currently loaded inside an iframe where the browser disables third-party cookies. Please open the application in a new browser tab (by clicking the 'Open in New Tab' icon in the top right of the preview pane) to authorize the server. Once opened, everything will work perfectly!");
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(responseText || 'Could not generate study materials from this document.');
+      }
+
+      const data = JSON.parse(responseText);
       if (data.success) {
         setStudyGuide(data.studyGuide || '');
         setQuizQuestions(data.quizQuestions || []);

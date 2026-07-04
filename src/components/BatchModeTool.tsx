@@ -78,15 +78,22 @@ export default function BatchModeTool({
         const endpoint = `/api/convert/${batchAction === 'protect' ? 'protect-pdf' : batchAction}`;
         const res = await fetch(endpoint, {
           method: 'POST',
-          body: formData
+          body: formData,
+          credentials: 'include',
         });
 
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || 'Operation failed');
+        const responseText = await res.text();
+        const isSandboxAuthRedirect = responseText.includes('Action required to load your app') || responseText.includes('click the button below to load');
+
+        if (isSandboxAuthRedirect) {
+          throw new Error("⚠️ Preview Server Authorization Required: This app is currently loaded inside an iframe where the browser disables third-party cookies. Please open the application in a new browser tab (by clicking the 'Open in New Tab' icon in the top right of the preview pane) to authorize the server. Once opened, everything will work perfectly!");
         }
 
-        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(responseText || 'Operation failed');
+        }
+
+        const data = JSON.parse(responseText);
         
         setQueue(prev => prev.map(q => q.id === fileItem.id ? {
           ...q,

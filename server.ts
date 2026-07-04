@@ -4594,8 +4594,8 @@ app.post('/api/convert/visual-organizer', upload.single('file'), async (req, res
 
 // 29. Visual PDF Annotator (Alias to edit-pdf logic)
 app.post('/api/convert/visual-editor', upload.single('file'), async (req, res) => {
+  const file = req.file;
   try {
-    const file = req.file;
     if (!file) return res.status(400).json({ error: 'Please upload a PDF file.' });
 
     const fileBytes = fs.readFileSync(file.path);
