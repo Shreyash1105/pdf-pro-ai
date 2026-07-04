@@ -41,7 +41,7 @@ interface DropZoneProps {
   onFilesAdded: (files: File[]) => void;
   onRemoveFile: (id: string) => void;
   onUpdateOptions: (options: Partial<ProcessingOptions>) => void;
-  onProcess: () => void;
+  onProcess: (overrideOptions?: Partial<ProcessingOptions>) => void;
   isProcessing: boolean;
   addToast?: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
@@ -127,7 +127,7 @@ export default function DropZone({
   // Toggle AI option
   const supportsAI = ['pdf-to-word', 'pdf-to-excel', 'pdf-to-ppt', 'pdf-to-html', 'ocr-pdf', 'scan-to-pdf', 'repair-pdf', 'ai-summarize', 'ai-translate'].includes(tool.id);
 
-  const isCustomTool = ['ai-chat', 'ai-study', 'ai-contract', 'visual-organizer', 'visual-editor', 'batch-mode', 'security-audit'].includes(tool.id);
+  const isCustomTool = ['ai-chat', 'ai-study', 'ai-contract', 'visual-organizer', 'visual-editor', 'edit-pdf', 'batch-mode', 'security-audit'].includes(tool.id);
 
   return (
     <div className="bg-white dark:bg-[#12151C] rounded-3xl border border-slate-100 dark:border-white/5 p-6 md:p-8 shadow-xl transition-all duration-300">
@@ -209,7 +209,7 @@ export default function DropZone({
           onReset={() => onRemoveFile(files[0].id)} 
           onSave={(order) => { 
             onUpdateOptions({ pageOrder: order }); 
-            setTimeout(onProcess, 50); 
+            onProcess({ pageOrder: order }); 
           }} 
           isProcessing={isProcessing} 
         />
@@ -220,7 +220,7 @@ export default function DropZone({
           onReset={() => onRemoveFile(files[0].id)} 
           onSave={(editsJson) => { 
             onUpdateOptions({ edits: editsJson }); 
-            setTimeout(onProcess, 50); 
+            onProcess({ edits: editsJson }); 
           }} 
           isProcessing={isProcessing} 
         />
@@ -239,8 +239,9 @@ export default function DropZone({
           fileItem={files[0]} 
           onReset={() => onRemoveFile(files[0].id)} 
           onSave={(meta) => { 
-            onUpdateOptions({ editText: JSON.stringify(meta) }); 
-            setTimeout(onProcess, 50); 
+            const editStr = JSON.stringify(meta);
+            onUpdateOptions({ editText: editStr }); 
+            onProcess({ editText: editStr }); 
           }} 
           isProcessing={isProcessing} 
         />

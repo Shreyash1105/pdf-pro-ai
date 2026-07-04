@@ -8,7 +8,7 @@ import { PDFParse } from 'pdf-parse';
 
 async function parsePdfToText(fileBuffer: Buffer): Promise<{ text: string }> {
   try {
-    const parser = new PDFParse({ data: fileBuffer });
+    const parser = new PDFParse({ data: new Uint8Array(fileBuffer) });
     const parsed = await parser.getText();
     return { text: parsed.text || '' };
   } catch (err) {
@@ -452,8 +452,8 @@ function getFileUrl(req: express.Request, filename: string): string {
 
 // 1. Merge PDF
 app.post('/api/convert/merge', upload.array('files'), async (req, res) => {
+  const files = req.files as Express.Multer.File[] || [];
   try {
-    const files = req.files as Express.Multer.File[];
     if (!files || files.length < 2) {
       return res.status(400).json({ error: 'Please upload at least 2 PDF files to merge.' });
     }
@@ -462,7 +462,7 @@ app.post('/api/convert/merge', upload.array('files'), async (req, res) => {
 
     for (const file of files) {
       const fileBytes = fs.readFileSync(file.path);
-      const pdfDoc = await PDFDocument.load(fileBytes);
+      const pdfDoc = await PDFDocument.load(fileBytes, { ignoreEncryption: true });
       const copiedPages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
       copiedPages.forEach(page => mergedPdf.addPage(page));
     }
@@ -471,11 +471,6 @@ app.post('/api/convert/merge', upload.array('files'), async (req, res) => {
     const outputFilename = `merged-${Date.now()}.pdf`;
     const outputPath = path.join(PROCESSED_DIR, outputFilename);
     fs.writeFileSync(outputPath, mergedPdfBytes);
-
-    // Clean up uploaded files
-    files.forEach(f => {
-      try { fs.unlinkSync(f.path); } catch {}
-    });
 
     res.json({
       success: true,
@@ -486,6 +481,11 @@ app.post('/api/convert/merge', upload.array('files'), async (req, res) => {
   } catch (error: any) {
     console.error('Merge error:', error);
     res.status(500).json({ error: error.message || 'Failed to merge PDF files.' });
+  } finally {
+    // Clean up uploaded files in finally to avoid memory leaks
+    files.forEach(f => {
+      try { fs.unlinkSync(f.path); } catch {}
+    });
   }
 });
 
@@ -3465,12 +3465,12 @@ app.post('/api/convert/crop-pdf', upload.single('file'), async (req, res) => {
 
 // 23. Edit PDF
 app.post('/api/convert/edit-pdf', upload.single('file'), async (req, res) => {
+  const file = req.file;
   try {
-    const file = req.file;
     if (!file) return res.status(400).json({ error: 'Please upload a PDF file.' });
 
     const fileBytes = fs.readFileSync(file.path);
-    const pdfDoc = await PDFDocument.load(fileBytes);
+    const pdfDoc = await PDFDocument.load(fileBytes, { ignoreEncryption: true });
     const pages = pdfDoc.getPages();
 
     // Helper to parse colors
@@ -3534,8 +3534,9 @@ app.post('/api/convert/edit-pdf', upload.single('file'), async (req, res) => {
     }
 
     for (const editItem of editsList) {
-      const { text, x, y, fontFamily = 'Helvetica-Bold', fontSize = 14, color = 'red', whiteout = false, pageIndex = 0 } = editItem;
-      if (!text || text.trim() === '') continue;
+      const { text, x, y, fontFamily = 'Helvetica-Bold', fontSize = 14, color = 'red', whiteout = false, highlight = false, pageIndex = 0 } = editItem;
+      // Skip empty highlights or spacing/empty overrides unless whiteout or highlight is toggled
+      if ((!text || text.trim() === '') && !whiteout && !highlight) continue;
 
       const targetPageIndex = Math.max(0, Math.min(pages.length - 1, pageIndex));
       const targetPage = pages[targetPageIndex];
@@ -3551,32 +3552,47 @@ app.post('/api/convert/edit-pdf', upload.single('file'), async (req, res) => {
 
       if (whiteout) {
         // Draw solid background to cover original text
-        const estWidth = text.length * sizeVal * 0.55;
-        const estHeight = sizeVal * 1.4;
+        const rectWidth = editItem.width ? (editItem.width / 100) * width : (Math.max(1, text ? text.length : 1) * sizeVal * 0.55);
+        const rectHeight = editItem.height ? (editItem.height / 100) * height : (sizeVal * 1.4);
         targetPage.drawRectangle({
-          x: absX - 2,
-          y: absY - (estHeight * 0.2),
-          width: estWidth + 4,
-          height: estHeight,
+          x: absX,
+          y: absY - rectHeight + (sizeVal * 0.1),
+          width: rectWidth + 2,
+          height: rectHeight + 2,
           color: rgb(1, 1, 1),
         });
       }
 
-      targetPage.drawText(sanitizeWinAnsi(text), {
-        x: absX,
-        y: absY,
-        size: sizeVal,
-        font,
-        color: rgb(colorObj.r, colorObj.g, colorObj.b),
-      });
+      if (highlight) {
+        // Draw translucent yellow highlighter box
+        const rectWidth = editItem.width ? (editItem.width / 100) * width : (Math.max(1, text ? text.length : 1) * sizeVal * 0.55);
+        const rectHeight = editItem.height ? (editItem.height / 100) * height : (sizeVal * 1.4);
+        targetPage.drawRectangle({
+          x: absX,
+          y: absY - rectHeight + (sizeVal * 0.1),
+          width: rectWidth + 2,
+          height: rectHeight + 2,
+          color: rgb(1, 0.94, 0.3), // Yellow
+          opacity: 0.45,
+        });
+      }
+
+      // Only draw text if there is actual content
+      if (text && text.trim() !== '') {
+        targetPage.drawText(sanitizeWinAnsi(text), {
+          x: absX,
+          y: absY - sizeVal + (sizeVal * 0.1), // Align text baseline inside the box correctly
+          size: sizeVal,
+          font,
+          color: rgb(colorObj.r, colorObj.g, colorObj.b),
+        });
+      }
     }
 
     const bytes = await pdfDoc.save();
     const outputFilename = `edited-${Date.now()}.pdf`;
     const outputPath = path.join(PROCESSED_DIR, outputFilename);
     fs.writeFileSync(outputPath, bytes);
-
-    try { fs.unlinkSync(file.path); } catch {}
 
     res.json({
       success: true,
@@ -3587,6 +3603,10 @@ app.post('/api/convert/edit-pdf', upload.single('file'), async (req, res) => {
   } catch (error: any) {
     console.error('Edit error:', error);
     res.status(500).json({ error: error.message || 'Failed to edit PDF.' });
+  } finally {
+    if (file) {
+      try { fs.unlinkSync(file.path); } catch {}
+    }
   }
 });
 
@@ -4579,7 +4599,7 @@ app.post('/api/convert/visual-editor', upload.single('file'), async (req, res) =
     if (!file) return res.status(400).json({ error: 'Please upload a PDF file.' });
 
     const fileBytes = fs.readFileSync(file.path);
-    const pdfDoc = await PDFDocument.load(fileBytes);
+    const pdfDoc = await PDFDocument.load(fileBytes, { ignoreEncryption: true });
     const pages = pdfDoc.getPages();
 
     // Helper to parse colors
@@ -4643,9 +4663,9 @@ app.post('/api/convert/visual-editor', upload.single('file'), async (req, res) =
     }
 
     for (const editItem of editsList) {
-      const { text, x, y, fontFamily = 'Helvetica-Bold', fontSize = 14, color = 'red', whiteout = false, pageIndex = 0 } = editItem;
-      // Skip empty highlights or spacing/empty overrides unless whiteout is toggled
-      if ((!text || text.trim() === '') && !whiteout) continue;
+      const { text, x, y, fontFamily = 'Helvetica-Bold', fontSize = 14, color = 'red', whiteout = false, highlight = false, pageIndex = 0 } = editItem;
+      // Skip empty highlights or spacing/empty overrides unless whiteout or highlight is toggled
+      if ((!text || text.trim() === '') && !whiteout && !highlight) continue;
 
       const targetPageIndex = Math.max(0, Math.min(pages.length - 1, pageIndex));
       const targetPage = pages[targetPageIndex];
@@ -4661,7 +4681,7 @@ app.post('/api/convert/visual-editor', upload.single('file'), async (req, res) =
 
       if (whiteout) {
         // Draw solid background to cover original text
-        const rectWidth = editItem.width ? (editItem.width / 100) * width : (Math.max(1, text.length) * sizeVal * 0.55);
+        const rectWidth = editItem.width ? (editItem.width / 100) * width : (Math.max(1, text ? text.length : 1) * sizeVal * 0.55);
         const rectHeight = editItem.height ? (editItem.height / 100) * height : (sizeVal * 1.4);
         targetPage.drawRectangle({
           x: absX,
@@ -4672,7 +4692,21 @@ app.post('/api/convert/visual-editor', upload.single('file'), async (req, res) =
         });
       }
 
-      // Only draw text if there is actual content (spacing whiteout is just a cover)
+      if (highlight) {
+        // Draw translucent yellow highlighter box
+        const rectWidth = editItem.width ? (editItem.width / 100) * width : (Math.max(1, text ? text.length : 1) * sizeVal * 0.55);
+        const rectHeight = editItem.height ? (editItem.height / 100) * height : (sizeVal * 1.4);
+        targetPage.drawRectangle({
+          x: absX,
+          y: absY - rectHeight + (sizeVal * 0.1),
+          width: rectWidth + 2,
+          height: rectHeight + 2,
+          color: rgb(1, 0.94, 0.3), // Yellow
+          opacity: 0.45,
+        });
+      }
+
+      // Only draw text if there is actual content
       if (text && text.trim() !== '') {
         targetPage.drawText(sanitizeWinAnsi(text), {
           x: absX,
@@ -4689,8 +4723,6 @@ app.post('/api/convert/visual-editor', upload.single('file'), async (req, res) =
     const outputPath = path.join(PROCESSED_DIR, outputFilename);
     fs.writeFileSync(outputPath, bytes);
 
-    try { fs.unlinkSync(file.path); } catch {}
-
     res.json({
       success: true,
       resultUrl: getFileUrl(req, outputFilename),
@@ -4700,6 +4732,10 @@ app.post('/api/convert/visual-editor', upload.single('file'), async (req, res) =
   } catch (error: any) {
     console.error('Visual editor error:', error);
     res.status(500).json({ error: error.message || 'Failed to edit PDF.' });
+  } finally {
+    if (file) {
+      try { fs.unlinkSync(file.path); } catch {}
+    }
   }
 });
 

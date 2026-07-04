@@ -223,11 +223,13 @@ export default function App() {
   };
 
   // Core execution flow: Connects Frontend to Express endpoints
-  const handleProcess = async () => {
+  const handleProcess = async (overrideOptions?: Partial<ProcessingOptions>) => {
     if (files.length === 0 || !selectedToolId) return;
 
     setIsProcessing(true);
     setErrorMessage(null);
+
+    const activeOptions = overrideOptions ? { ...options, ...overrideOptions } : options;
 
     // 1. Simulate File Upload Progress
     setFiles(prev => prev.map(f => ({ ...f, status: 'uploading', progress: 10 })));
@@ -286,40 +288,40 @@ export default function App() {
       }
 
       // Append conversion options
-      if (options.rotateAngle) formData.append('rotateAngle', options.rotateAngle.toString());
-      if (options.splitRange) formData.append('splitRange', options.splitRange);
-      if (options.compressLevel) formData.append('compressLevel', options.compressLevel);
-      if (options.autoOptimize !== undefined) formData.append('autoOptimize', options.autoOptimize.toString());
-      if (options.aiEnhanced) formData.append('aiEnhanced', options.aiEnhanced.toString());
-      if (options.ocrFormat) formData.append('ocrFormat', options.ocrFormat);
-      if (options.enableOcr !== undefined) formData.append('enableOcr', options.enableOcr.toString());
-      if (options.ocrEngine) formData.append('ocrEngine', options.ocrEngine);
+      if (activeOptions.rotateAngle) formData.append('rotateAngle', activeOptions.rotateAngle.toString());
+      if (activeOptions.splitRange) formData.append('splitRange', activeOptions.splitRange);
+      if (activeOptions.compressLevel) formData.append('compressLevel', activeOptions.compressLevel);
+      if (activeOptions.autoOptimize !== undefined) formData.append('autoOptimize', activeOptions.autoOptimize.toString());
+      if (activeOptions.aiEnhanced !== undefined) formData.append('aiEnhanced', activeOptions.aiEnhanced.toString());
+      if (activeOptions.ocrFormat) formData.append('ocrFormat', activeOptions.ocrFormat);
+      if (activeOptions.enableOcr !== undefined) formData.append('enableOcr', activeOptions.enableOcr.toString());
+      if (activeOptions.ocrEngine) formData.append('ocrEngine', activeOptions.ocrEngine);
       
       // Watermark & Page numbering options
-      if (options.watermarkText) formData.append('watermarkText', options.watermarkText);
-      if (options.watermarkColor) formData.append('watermarkColor', options.watermarkColor);
-      if (options.watermarkSize) formData.append('watermarkSize', options.watermarkSize.toString());
-      if (options.watermarkOpacity) formData.append('watermarkOpacity', options.watermarkOpacity.toString());
-      if (options.watermarkAngle) formData.append('watermarkAngle', options.watermarkAngle.toString());
-      if (options.numberPosition) formData.append('numberPosition', options.numberPosition);
-      if (options.numberFormat) formData.append('numberFormat', options.numberFormat);
-      if (options.numberSize) formData.append('numberSize', options.numberSize.toString());
-      if (options.numberColor) formData.append('numberColor', options.numberColor);
+      if (activeOptions.watermarkText) formData.append('watermarkText', activeOptions.watermarkText);
+      if (activeOptions.watermarkColor) formData.append('watermarkColor', activeOptions.watermarkColor);
+      if (activeOptions.watermarkSize) formData.append('watermarkSize', activeOptions.watermarkSize.toString());
+      if (activeOptions.watermarkOpacity) formData.append('watermarkOpacity', activeOptions.watermarkOpacity.toString());
+      if (activeOptions.watermarkAngle) formData.append('watermarkAngle', activeOptions.watermarkAngle.toString());
+      if (activeOptions.numberPosition) formData.append('numberPosition', activeOptions.numberPosition);
+      if (activeOptions.numberFormat) formData.append('numberFormat', activeOptions.numberFormat);
+      if (activeOptions.numberSize) formData.append('numberSize', activeOptions.numberSize.toString());
+      if (activeOptions.numberColor) formData.append('numberColor', activeOptions.numberColor);
 
       // Page manipulation and utility options
-      if (options.pagesToRemove) formData.append('pagesToRemove', options.pagesToRemove);
-      if (options.pagesToExtract) formData.append('pagesToExtract', options.pagesToExtract);
-      if (options.pageOrder) formData.append('pageOrder', options.pageOrder);
-      if (options.cropMargin) formData.append('cropMargin', options.cropMargin);
-      if (options.editText) formData.append('editText', options.editText);
-      if (options.editX !== undefined) formData.append('editX', options.editX.toString());
-      if (options.editY !== undefined) formData.append('editY', options.editY.toString());
-      if (options.formFields) formData.append('formFields', options.formFields);
-      if (options.pdfPassword) formData.append('pdfPassword', options.pdfPassword);
-      if (options.signatureText) formData.append('signatureText', options.signatureText);
-      if (options.redactPhrases) formData.append('redactPhrases', options.redactPhrases);
-      if (options.targetLanguage) formData.append('targetLanguage', options.targetLanguage);
-      if (options.edits) formData.append('edits', options.edits);
+      if (activeOptions.pagesToRemove) formData.append('pagesToRemove', activeOptions.pagesToRemove);
+      if (activeOptions.pagesToExtract) formData.append('pagesToExtract', activeOptions.pagesToExtract);
+      if (activeOptions.pageOrder) formData.append('pageOrder', activeOptions.pageOrder);
+      if (activeOptions.cropMargin) formData.append('cropMargin', activeOptions.cropMargin);
+      if (activeOptions.editText) formData.append('editText', activeOptions.editText);
+      if (activeOptions.editX !== undefined) formData.append('editX', activeOptions.editX.toString());
+      if (activeOptions.editY !== undefined) formData.append('editY', activeOptions.editY.toString());
+      if (activeOptions.formFields) formData.append('formFields', activeOptions.formFields);
+      if (activeOptions.pdfPassword) formData.append('pdfPassword', activeOptions.pdfPassword);
+      if (activeOptions.signatureText) formData.append('signatureText', activeOptions.signatureText);
+      if (activeOptions.redactPhrases) formData.append('redactPhrases', activeOptions.redactPhrases);
+      if (activeOptions.targetLanguage) formData.append('targetLanguage', activeOptions.targetLanguage);
+      if (activeOptions.edits) formData.append('edits', activeOptions.edits);
 
       const response = await fetch(`/api/convert/${selectedToolId}`, {
         method: 'POST',
